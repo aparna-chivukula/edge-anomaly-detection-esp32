@@ -1,24 +1,64 @@
-# Edge-Based Anomaly Detection for Industrial Machine Health Monitoring
+# EquipGuard — Edge-Based Anomaly Detection for Industrial Machine Health Monitoring
 
-A fully edge-deployed industrial anomaly detection system running on 
-dual ESP32 nodes. Uses unsupervised Z-score statistical detection across 
-5 sensor channels with zero cloud dependency — all inference happens 
-on-device in real time.
+A fully edge-deployed industrial machine health monitoring system 
+distributed across three microcontroller nodes. Uses Z-score unsupervised 
+anomaly detection and threshold-based alerting across 5 sensor channels 
+with zero cloud dependency. All inference runs on-device in real time.
 
-## Tech Stack
-- **Hardware:** ESP32 (dual node setup)
-- **Detection Method:** Z-score unsupervised anomaly detection
-- **Sensor Channels:** 5 (vibration, temperature, current, etc.)
-- **Communication:** ESP-NOW / Serial between nodes
-- **Language:** C++ (Arduino framework)
+## System Name
+**EquipGuard-ML**
 
-## Key Features
-- Fully edge-based — no cloud, no Wi-Fi required for inference
-- Z-score based unsupervised detection (no labeled training data needed)
-- Dual ESP32 node architecture
-- Real-time inference with 37.4ms latency
-- Extremely lightweight — only 1.06 KB flash usage
-- 5-channel sensor fusion
+## Node Architecture
+
+| Node | Hardware | Sensors | Role |
+|---|---|---|---|
+| **C6 (Pico)** | ESP32-C6 | BMP180 (temp + pressure), Vibration, Current, Voltage | Z-score anomaly detection + WiFi AP + Web Dashboard |
+| **Nano** | ESP32 (Nano) | Air Quality (AQI) | Threshold-based alerting + Buzzer |
+| **DevKit** | ESP32 DevKit | IR Sensor | Object detection + sends data to C6 |
+
+## Communication Architecture
+
+[ESP32-C6 / Pico] ← acts as WiFi Access Point ("EquipGuard-ML")
+↑ ↑
+HTTP POST HTTP POST
+| |
+[ESP32 Nano] [ESP32 DevKit]
+(AQI + alerts) (IR sensor data)
+
+C6 also serves:
+GET /sensors → JSON of all sensor data (polled by Nano)
+GET / → Live Web Dashboard (browser)
+
+
+## Sensors (5 Channels)
+| Sensor | Node | Type |
+|---|---|---|
+| Temperature | C6 (BMP180) | I2C |
+| Pressure | C6 (BMP180) | I2C |
+| Vibration | C6 | Digital |
+| Current | C6 | Analog (ADC) |
+| Voltage | C6 | Analog (ADC) |
+| Air Quality (AQI) | Nano | Analog (ADC) |
+| IR (Object Detection) | DevKit | Digital |
+
+## Detection Methods
+
+### Z-Score (C6 / Pico)
+Runs on temperature, pressure, current, and voltage. Pre-trained mean 
+and standard deviation per channel are stored on-device. Each new reading 
+is scored.
+
+### Threshold-Based (Nano)
+Air Quality alert fires when AQI raw ADC reading crosses the threshold.  
+IR alert from DevKit is pulled by Nano via C6's `/sensors` endpoint.  
+Combined alert = `machineAlert OR aqiAlert OR irAlert` → buzzer ON.
+
+## Web Dashboard
+C6 hosts a live web dashboard accessible over WiFi at `192.168.4.1`.  
+Auto-refreshes every 2 seconds showing:
+- Temperature, Pressure, Vibration, Current, Voltage (from C6)
+- Air Quality (from Nano)
+- IR status (from DevKit)
 
 ## Performance
 | Metric | Value |
@@ -27,16 +67,18 @@ on-device in real time.
 | Inference Latency | 37.4 ms |
 | Flash Usage | 1.06 KB |
 | Cloud Dependency | None |
+| Dashboard Refresh | Every 2 seconds |
 
-## How It Works
-Each sensor channel continuously streams readings to the ESP32. A 
-rolling window of values is maintained per channel, from which the mean 
-and standard deviation are computed. Any new reading that deviates beyond 
-a set Z-score threshold (typically 2–3σ) is flagged as an anomaly. The 
-dual-node setup allows one node to handle sensing while the other 
-handles detection and alerting, reducing processing bottlenecks.
+## Key Features
+- Fully edge-based — no cloud, no external server
+- C6 acts as WiFi AP — entire system is self-contained
+- Dual detection: Z-score (statistical) + threshold (rule-based)
+- Live web dashboard served directly from microcontroller
+- Buzzer actuator for real-time physical alerts
+- 3-node distributed architecture with HTTP-based inter-node communication
 
-## Why Edge?
-Running detection on-device eliminates latency from cloud round-trips, 
-works in network-denied industrial environments, and drastically reduces 
-data transmission costs — making it practical for factory floor deployment.
+## Tech Stack
+- **Languages:** C++ (Arduino framework)
+- **Communication:** HTTP over WiFi (C6 as AP)
+- **Libraries:** WiFi, WebServer, ArduinoJson, Adafruit BMP085, Wire
+- **Sensors:** BMP180, vibration switch, ACS current sensor, voltage divider, MQ air quality, IR sensor
